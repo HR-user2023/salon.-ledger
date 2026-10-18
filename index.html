@@ -1,4 +1,4 @@
-<title>智慧帳本</title>
+<title>皮卡一店帳本</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* 存摺式帳本：一欄、上方帳戶餘額、底部分頁列；黑白灰，系統字體 */
@@ -78,10 +78,6 @@ input.i,select.i{width:100%;padding:10px 12px;border:1px solid var(--line);borde
 input.i:focus,select.i:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 input.big{font-size:26px;font-variant-numeric:tabular-nums;padding:10px 12px;text-align:right}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.chips-pick{display:flex;flex-wrap:wrap;gap:6px}
-.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:14px;cursor:pointer}
-.chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.chip.preset{border-style:dashed;color:var(--muted)}
 .btn{border:0;border-radius:9px;padding:12px 16px;font-weight:500;cursor:pointer;background:var(--accent);color:var(--accent-ink)}
 .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
 .btn.danger{background:transparent;border:1px solid var(--ink);color:var(--ink)}
@@ -510,21 +506,19 @@ function viewAdd(){
     ${auto ? `<div class="note">這筆是${r.indexOf('close:') === 0 ? '月結' : '分潤'}自動產生的，要改請到${r.indexOf('close:') === 0 ? '「月結」' : '「分潤」'}刪掉重做。</div>`
       : (r === 'import' ? `<div class="note">這筆是從舊總帳匯入的歷史紀錄。</div>` : '')}
     <div class="seg dir"><button class="in ${F.dir==='收入'?'on':''}" data-act="dir" data-v="收入">收入</button><button class="out ${F.dir==='支出'?'on':''}" data-act="dir" data-v="支出">支出</button></div>
-    <label class="f">金額<input class="i big" id="fa" inputmode="decimal" placeholder="0" value="${F.amount === '' ? '' : esc(fmt(F.amount))}" autocomplete="off"></label>
-    <div class="f" style="display:grid;gap:6px"><span class="small muted">分類</span>
-      <div class="chips-pick">${cats.map(c => `<button class="chip ${F.cat===c?'on':''}" data-act="cat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div></div>
-    ${!F.id ? `<div class="f" style="display:grid;gap:6px"><span class="small muted">常用（點了自動填）</span>
-      <div class="chips-pick">${PRESETS.map((p, i) => `<button class="chip preset" data-act="preset" data-v="${i}">${esc(p.cat)} ${fmt(p.amount)}</button>`).join('')}</div></div>` : ''}
-    <label class="f">備註<input class="i" id="fn" placeholder="例如：10月台新刷卡、Ivy 客訂金" value="${esc(F.note)}"></label>
     <div class="grid2">
       <label class="f">日期<input class="i" type="date" id="fd" value="${esc(F.date)}"></label>
-      <label class="f">算哪個月的帳<input class="i" type="month" id="fm" value="${esc(F.month)}"></label>
+      <label class="f">計入月份<input class="i" type="month" id="fm" value="${esc(F.month)}"></label>
     </div>
     <div class="grid2">
       <label class="f">帳戶<select class="i" id="fac">${Object.keys(ACCTS).map(a => `<option ${a===F.account?'selected':''}>${a}</option>`).join('')}</select></label>
-      <label class="f">從基金收支<select class="i" id="ff"><option value="">不是（一般收支）</option>${fopts.map(f => `<option ${f===F.fund?'selected':''}>${esc(f)}</option>`).join('')}</select></label>
+      <label class="f">基金支出<select class="i" id="ff"><option value="">不是（一般收支）</option>${fopts.map(f => `<option ${f===F.fund?'selected':''}>${esc(f)}</option>`).join('')}</select></label>
     </div>
-    <p class="small muted" style="margin:0">像「9月薪資」10/5 才付，日期填 10/5、月份選 9 月。冷氣維修這類從預備金出的，選「從基金收支」。</p>
+    ${!F.id ? `<label class="f">常用項目<select class="i" id="fpre"><option value="">（選了自動填下面三格）</option>${PRESETS.map((p, i) => `<option value="${i}">${esc(p.cat)}　${esc(p.note)}　${fmt(p.amount)}</option>`).join('')}</select></label>` : ''}
+    <label class="f">分類<select class="i" id="fcat">${cats.map(c => `<option ${c===F.cat?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
+    <label class="f">項目<input class="i" id="fn" placeholder="例如：10月台新刷卡、Ivy 客訂金" value="${esc(F.note)}"></label>
+    <label class="f">金額<input class="i big" id="fa" inputmode="decimal" placeholder="0" value="${F.amount === '' ? '' : esc(fmt(F.amount))}" autocomplete="off"></label>
+    <p class="small muted" style="margin:0">像「9月薪資」10/5 才付，日期填 10/5、計入月份選 9 月。冷氣維修這類從預備金出的，「基金支出」選預備金。</p>
     <div class="row">
       ${F.id && !auto ? `<button class="btn danger" data-act="del">${confirmKey === 'del:' + F.id ? '確定刪除？再按一次' : '刪除'}</button>` : ''}
       <span class="grow"></span>
@@ -537,6 +531,7 @@ function syncForm(){
   if (!F || view !== 'add') return;
   const v = id => { const e = el(id); return e ? e.value : null; };
   if (v('fa') !== null) F.amount = v('fa').trim() === '' ? '' : num(v('fa'));
+  if (v('fcat') !== null) F.cat = v('fcat');
   if (v('fn') !== null) F.note = v('fn');
   if (v('fd') !== null) F.date = v('fd');
   if (v('fm') !== null) F.month = v('fm');
@@ -754,8 +749,6 @@ document.addEventListener('click', ev => {
     return go('add');
   }
   if (act === 'dir'){ syncForm(); F.dir = v; const cats = v === '收入' ? IN_CATS : OUT_CATS; if (!cats.includes(F.cat)) F.cat = cats[0]; return render(); }
-  if (act === 'cat'){ syncForm(); F.cat = v; return render(); }
-  if (act === 'preset'){ syncForm(); const p = PRESETS[Number(v)]; Object.assign(F, {dir:p.dir, cat:p.cat, amount:p.amount, note:p.note}); return render(); }
   if (act === 'saveEntry'){
     syncForm();
     if (!(num(F.amount) > 0)) return toast('請輸入金額');
@@ -887,6 +880,13 @@ document.addEventListener('change', ev => {
   if (view === 'close' && id === 'ctr') syncClose();
   if (view === 'close' && /^c(net|rev|f\d+|tra)$/.test(id)){ const n = ev.target.value.trim(); if (n) ev.target.value = fmt(num(n)); }
   if (view === 'add' && id === 'fa'){ const n = ev.target.value.trim(); if (n) ev.target.value = fmt(num(n)); }
+  if (view === 'add' && id === 'fcat' && F) F.cat = ev.target.value;
+  if (view === 'add' && id === 'fpre' && F && ev.target.value !== ''){
+    syncForm();
+    const p = PRESETS[Number(ev.target.value)];
+    Object.assign(F, {dir:p.dir, cat:p.cat, amount:p.amount, note:p.note});
+    render();
+  }
   if (view === 'settings' && /^fk\d+$/.test(id)){ syncSet(); render(); }
 });
 
