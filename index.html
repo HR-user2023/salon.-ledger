@@ -342,11 +342,11 @@ function shareBal(){
   DB.ledger.forEach(e => { if (e.fund === SHARE) b += signed(e); });
   return b;
 }
-// 流水帳當月收支（只當對照用，排除轉帳與基金收支）
+// 當月營收戶進出（只當對照用，排除轉帳與基金收支；存款戶是基金在放的，不算損益）
 function monthStats(m){
   let inc = 0, exp = 0, n = 0;
   DB.ledger.forEach(e => {
-    if (e.month !== m || e.cat === '轉帳' || e.fund) return;
+    if (e.month !== m || e.account !== '營收戶' || e.cat === '轉帳' || e.fund) return;
     n++; if (e.dir === '收入') inc += num(e.amount); else exp += num(e.amount);
   });
   return {inc, exp, net: inc - exp, n};
@@ -393,7 +393,7 @@ function pendingQuarter(){
 /* ================= 畫面 ================= */
 let view = lsGet('pika_view') || 'home';
 let F = null, CF = null, PQ = null, PAY = null, SET = null;
-let LIST = {month: thisMonth(), acc:'全部', q:''};
+let LIST = {month: thisMonth(), acc:'全部', q:'', scope:'month', limit:200};
 let confirmKey = '';
 function go(v){ view = v; lsSet('pika_view', v); confirmKey = ''; window.scrollTo(0,0); render(); }
 
@@ -437,13 +437,13 @@ function viewHome(){
     <div><span class="lbl">存款戶</span><span class="amt">${sfmt(dep)}</span><span class="acc">${ACCTS.存款戶}</span></div>
   </div>
   <section class="card">
-    <h2>${mLabel(cm)}<small>流水帳到今天為止</small></h2>
+    <h2>${mLabel(cm)}<small>營收戶進出，到今天為止</small></h2>
     <div class="stats">
       <div><div class="k">收入</div><div class="v in">${fmt(st.inc)}</div></div>
       <div><div class="k">支出</div><div class="v out">${fmt(st.exp)}</div></div>
       <div><div class="k">差額</div><div class="v">${sfmt(st.net)}</div></div>
     </div>
-    <p class="small muted" style="margin:0">這是銀行進出，不是淨利。淨利月結時從 POS 損益表填入。</p>
+    <p class="small muted" style="margin:0">這是營收戶的銀行進出，不是淨利。淨利月結時從 POS 損益表填入。</p>
     <div class="row"><span class="grow small muted">${closeOf(ncm) ? '月結都做完了' : `${mLabel(ncm)}還沒月結`}</span>
       <button class="btn small ghost" data-act="go" data-v="close">去月結</button></div>
   </section>
@@ -465,31 +465,46 @@ function viewHome(){
 }
 
 function viewList(){
-  let rows = DB.ledger.filter(e => (!LIST.month || e.month === LIST.month || e.date.slice(0,7) === LIST.month));
+  const all = LIST.scope === 'all';
+  let rows = DB.ledger.filter(e => all || !LIST.month || e.month === LIST.month);
   if (LIST.acc !== '全部') rows = rows.filter(e => e.account === LIST.acc);
   if (LIST.q) { const q = LIST.q.toLowerCase(); rows = rows.filter(e => (e.cat + ' ' + e.note + ' ' + e.by + ' ' + e.fund + ' ' + e.amount).toLowerCase().includes(q)); }
   rows.sort((a,b) => (b.date + b.at).localeCompare(a.date + a.at));
-  let inc = 0, exp = 0; rows.forEach(e => e.dir === '收入' ? inc += num(e.amount) : exp += num(e.amount));
-  const days = {}; rows.forEach(e => (days[e.date] = days[e.date] || []).push(e));
+  // 收入／支出跟總覽、月結同一個算法：排除轉帳與基金收支
+  let inc = 0, exp = 0, other = 0;
+  rows.forEach(e => {
+    if (e.cat === '轉帳' || e.fund){ other++; return; }
+    if (e.dir === '收入') inc += num(e.amount); else exp += num(e.amount);
+  });
+  const total = rows.length;
+  const shown = all ? rows.slice(0, LIST.limit) : rows;   // 全部模式分批顯示，手機才不會卡
+  const days = {}; shown.forEach(e => (days[e.date] = days[e.date] || []).push(e));
+  const accSel = `<label class="f">帳戶<select class="i" id="la">${['全部','營收戶','存款戶'].map(a => `<option ${a===LIST.acc?'selected':''}>${a}</option>`).join('')}</select></label>`;
+  const monSel = `<label class="f">計入月份<input class="i" type="month" id="lm" value="${esc(LIST.month)}"></label>`;
   return `
   <section class="card">
-    <div class="grid2">
-      <label class="f">月份<input class="i" type="month" id="lm" value="${esc(LIST.month)}"></label>
-      <label class="f">帳戶<select class="i" id="la">${['全部','營收戶','存款戶'].map(a => `<option ${a===LIST.acc?'selected':''}>${a}</option>`).join('')}</select></label>
+    <div class="seg">
+      <button class="${all?'':'on'}" data-act="scope" data-v="month">當月</button>
+      <button class="${all?'on':''}" data-act="scope" data-v="all">全部流水帳</button>
     </div>
+    ${all ? accSel : `<div class="grid2">${monSel}${accSel}</div>`}
     <label class="f">搜尋<input class="i" id="lq" placeholder="例如：房租、貨款、Ivy" value="${esc(LIST.q)}"></label>
     <div class="stats">
       <div><div class="k">收入</div><div class="v in">${fmt(inc)}</div></div>
       <div><div class="k">支出</div><div class="v out">${fmt(exp)}</div></div>
-      <div><div class="k">筆數</div><div class="v">${rows.length}</div></div>
+      <div><div class="k">差額</div><div class="v">${sfmt(inc - exp)}</div></div>
     </div>
+    <p class="small muted" style="margin:0">${all ? '全部' : mLabel(LIST.month)}共 ${total} 筆。上面三格不含轉帳和基金收支${other ? `（${other} 筆）` : ''}。</p>
   </section>
   <section class="card"><div class="entries">
-    ${rows.length ? Object.keys(days).map(d => {
+    ${total ? Object.keys(days).map(d => {
       const sum = days[d].reduce((s, e) => s + signed(e), 0);
-      return `<div class="day"><span>${d.slice(5).replace('-','/')}</span><span class="num">${sum >= 0 ? '+' : '−'}${fmt(Math.abs(sum))}</span></div>` + days[d].map(e => entryHTML(e)).join('');
+      return `<div class="day"><span>${esc(all ? d : d.slice(5).replace('-','/'))}</span><span class="num">${sum >= 0 ? '+' : '−'}${fmt(Math.abs(sum))}</span></div>` + days[d].map(e => entryHTML(e)).join('');
     }).join('') : '<div class="empty">這個條件下沒有記錄</div>'}
-  </div></section>`;
+  </div>
+  ${all && total > shown.length ? `<div class="row"><span class="grow small muted">已顯示 ${shown.length} / ${total} 筆</span>
+    <button class="btn small ghost" data-act="more">再顯示 200 筆</button></div>` : ''}
+  </section>`;
 }
 
 /* ---- 記一筆 ---- */
@@ -564,11 +579,11 @@ function viewClose(){
       <label class="f">本月淨利（POS 損益表）<input class="i num" id="cnet" inputmode="decimal" placeholder="0" value="${CF.net === '' ? '' : esc(fmt(CF.net))}" style="text-align:right"></label>
     </div>
     <div class="stats">
-      <div><div class="k">流水帳收入</div><div class="v in">${fmt(st.inc)}</div></div>
-      <div><div class="k">流水帳支出</div><div class="v out">${fmt(st.exp)}</div></div>
+      <div><div class="k">營收戶收入</div><div class="v in">${fmt(st.inc)}</div></div>
+      <div><div class="k">營收戶支出</div><div class="v out">${fmt(st.exp)}</div></div>
       <div><div class="k">差額</div><div class="v">${sfmt(st.net)}</div></div>
     </div>
-    <p class="small muted" style="margin:0">上面三個是銀行進出，只給你對照用，不會拿來分配。</p>
+    <p class="small muted" style="margin:0">上面三格是銀行進出，只給你對照用，不會拿來分配。</p>
     <div class="alines" id="calloc">${names.length ? names.map((n, i) => {
       const f = DB.funds[i];
       const rule = f.kind === '固定金額' ? `固定 ${fmt(f.rate)}` : `${f.kind.replace('%','')} ${f.rate}%`;
@@ -742,6 +757,8 @@ document.addEventListener('click', ev => {
   if (act === 'relock'){ lsSet('pika_pw', ''); SET = null; return showLock(''); }
   if (!DB || locked) return;
   if (act === 'go'){ if (v === 'close') CF = null; if (v === 'settings') SET = null; return go(v); }
+  if (act === 'scope'){ LIST.scope = v; LIST.limit = 200; window.scrollTo(0,0); return render(); }
+  if (act === 'more'){ LIST.limit += 200; return render(); }
   if (act === 'new'){ F = newForm(); F.back = view === 'add' ? 'home' : view; return go('add'); }
   if (act === 'edit'){
     const e = DB.ledger.find(x => x.id === v); if (!e) return;
