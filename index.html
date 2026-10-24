@@ -393,7 +393,7 @@ function pendingQuarter(){
 /* ================= 畫面 ================= */
 let view = lsGet('pika_view') || 'home';
 let F = null, CF = null, PQ = null, PAY = null, SET = null;
-let LIST = {month: thisMonth(), acc:'全部', q:'', scope:'month', limit:200};
+let LIST = {month: thisMonth(), acc:'全部', fund:'全部', q:'', scope:'month', limit:200};
 let confirmKey = '';
 function go(v){ view = v; lsSet('pika_view', v); confirmKey = ''; window.scrollTo(0,0); render(); }
 
@@ -467,20 +467,25 @@ function viewHome(){
 function viewList(){
   const all = LIST.scope === 'all';
   let rows = DB.ledger.filter(e => all || !LIST.month || e.month === LIST.month);
+  const byFund = LIST.fund && LIST.fund !== '全部';
+  if (byFund) rows = rows.filter(e => e.fund === LIST.fund);
   if (LIST.acc !== '全部') rows = rows.filter(e => e.account === LIST.acc);
   if (LIST.q) { const q = LIST.q.toLowerCase(); rows = rows.filter(e => (e.cat + ' ' + e.note + ' ' + e.by + ' ' + e.fund + ' ' + e.amount).toLowerCase().includes(q)); }
   rows.sort((a,b) => (b.date + b.at).localeCompare(a.date + a.at));
-  // 收入／支出跟總覽、月結同一個算法：只算一個帳戶，排除轉帳與基金收支
+  // 選了基金就看那個基金的進出；否則跟總覽、月結同一個算法（只算一個帳戶，排除轉帳與基金收支）
   const statAcc = LIST.acc === '存款戶' ? '存款戶' : '營收戶';
+  const subject = byFund ? LIST.fund : statAcc;
   let inc = 0, exp = 0, other = 0;
   rows.forEach(e => {
-    if (e.account !== statAcc || e.cat === '轉帳' || e.fund){ other++; return; }
+    if (!byFund && (e.account !== statAcc || e.cat === '轉帳' || e.fund)){ other++; return; }
     if (e.dir === '收入') inc += num(e.amount); else exp += num(e.amount);
   });
+  const bal = byFund ? (LIST.fund === SHARE ? shareBal() : fundBal(LIST.fund)) : acctBal(statAcc);
   const total = rows.length;
   const shown = all ? rows.slice(0, LIST.limit) : rows;   // 全部模式分批顯示，手機才不會卡
   const days = {}; shown.forEach(e => (days[e.date] = days[e.date] || []).push(e));
   const accSel = `<label class="f">帳戶<select class="i" id="la">${['全部','營收戶','存款戶'].map(a => `<option ${a===LIST.acc?'selected':''}>${a}</option>`).join('')}</select></label>`;
+  const fundSel = `<label class="f">基金<select class="i" id="lf">${['全部'].concat(fundNames(), [SHARE]).map(f => `<option ${f===LIST.fund?'selected':''}>${esc(f)}</option>`).join('')}</select></label>`;
   const monSel = `<label class="f">計入月份<input class="i" type="month" id="lm" value="${esc(LIST.month)}"></label>`;
   return `
   <section class="card">
@@ -488,15 +493,18 @@ function viewList(){
       <button class="${all?'':'on'}" data-act="scope" data-v="month">當月</button>
       <button class="${all?'on':''}" data-act="scope" data-v="all">全部流水帳</button>
     </div>
-    ${all ? accSel : `<div class="grid2">${monSel}${accSel}</div>`}
+    ${all ? '' : monSel}
+    <div class="grid2">${accSel}${fundSel}</div>
     <label class="f">搜尋<input class="i" id="lq" placeholder="例如：房租、貨款、Ivy" value="${esc(LIST.q)}"></label>
     <div class="stats">
-      <div><div class="k">${statAcc}收入</div><div class="v in">${fmt(inc)}</div></div>
-      <div><div class="k">${statAcc}支出</div><div class="v out">${fmt(exp)}</div></div>
+      <div><div class="k">${esc(subject)}進帳</div><div class="v in">${fmt(inc)}</div></div>
+      <div><div class="k">${esc(subject)}支出</div><div class="v out">${fmt(exp)}</div></div>
       <div><div class="k">差額</div><div class="v">${sfmt(inc - exp)}</div></div>
     </div>
-    <div class="total"><span>${statAcc}目前餘額</span><span class="num">${sfmt(acctBal(statAcc))}</span></div>
-    <p class="small muted" style="margin:0">${all ? '全部' : mLabel(LIST.month)}共 ${total} 筆。上面三格是<b>期間的收支合計</b>，只算${statAcc}、不含轉帳和基金收支${other ? `（排除 ${other} 筆）` : ''}，所以不會等於餘額。</p>
+    <div class="total"><span>${esc(subject)}目前餘額</span><span class="num ${bal < 0 ? 'out' : ''}">${sfmt(bal)}</span></div>
+    <p class="small muted" style="margin:0">${all ? '全部' : mLabel(LIST.month)}共 ${total} 筆。${byFund
+      ? `只看標了「${esc(LIST.fund)}」的紀錄。餘額＝期初＋月結提撥＋這些進出。`
+      : `上面三格是<b>期間的收支合計</b>，只算${statAcc}、不含轉帳和基金收支${other ? `（排除 ${other} 筆）` : ''}，所以不會等於餘額。`}</p>
   </section>
   <section class="card"><div class="entries">
     ${total ? Object.keys(days).map(d => {
@@ -895,6 +903,7 @@ document.addEventListener('change', ev => {
   const id = ev.target.id;
   if (view === 'list' && id === 'lm'){ LIST.month = ev.target.value; render(); }
   if (view === 'list' && id === 'la'){ LIST.acc = ev.target.value; render(); }
+  if (view === 'list' && id === 'lf'){ LIST.fund = ev.target.value; LIST.limit = 200; render(); }
   if (view === 'close' && id === 'cm' && ev.target.value){ CF = closeForm(ev.target.value); render(); }
   if (view === 'close' && id === 'ctr') syncClose();
   if (view === 'close' && /^c(net|rev|f\d+|tra)$/.test(id)){ const n = ev.target.value.trim(); if (n) ev.target.value = fmt(num(n)); }
@@ -911,4 +920,4 @@ document.addEventListener('change', ev => {
 
 setSync();
 load();
-</script> 
+</script>
