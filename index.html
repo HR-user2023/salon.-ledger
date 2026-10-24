@@ -470,10 +470,11 @@ function viewList(){
   if (LIST.acc !== '全部') rows = rows.filter(e => e.account === LIST.acc);
   if (LIST.q) { const q = LIST.q.toLowerCase(); rows = rows.filter(e => (e.cat + ' ' + e.note + ' ' + e.by + ' ' + e.fund + ' ' + e.amount).toLowerCase().includes(q)); }
   rows.sort((a,b) => (b.date + b.at).localeCompare(a.date + a.at));
-  // 收入／支出跟總覽、月結同一個算法：排除轉帳與基金收支
+  // 收入／支出跟總覽、月結同一個算法：只算一個帳戶，排除轉帳與基金收支
+  const statAcc = LIST.acc === '存款戶' ? '存款戶' : '營收戶';
   let inc = 0, exp = 0, other = 0;
   rows.forEach(e => {
-    if (e.cat === '轉帳' || e.fund){ other++; return; }
+    if (e.account !== statAcc || e.cat === '轉帳' || e.fund){ other++; return; }
     if (e.dir === '收入') inc += num(e.amount); else exp += num(e.amount);
   });
   const total = rows.length;
@@ -490,11 +491,12 @@ function viewList(){
     ${all ? accSel : `<div class="grid2">${monSel}${accSel}</div>`}
     <label class="f">搜尋<input class="i" id="lq" placeholder="例如：房租、貨款、Ivy" value="${esc(LIST.q)}"></label>
     <div class="stats">
-      <div><div class="k">收入</div><div class="v in">${fmt(inc)}</div></div>
-      <div><div class="k">支出</div><div class="v out">${fmt(exp)}</div></div>
+      <div><div class="k">${statAcc}收入</div><div class="v in">${fmt(inc)}</div></div>
+      <div><div class="k">${statAcc}支出</div><div class="v out">${fmt(exp)}</div></div>
       <div><div class="k">差額</div><div class="v">${sfmt(inc - exp)}</div></div>
     </div>
-    <p class="small muted" style="margin:0">${all ? '全部' : mLabel(LIST.month)}共 ${total} 筆。上面三格不含轉帳和基金收支${other ? `（${other} 筆）` : ''}。</p>
+    <div class="total"><span>${statAcc}目前餘額</span><span class="num">${sfmt(acctBal(statAcc))}</span></div>
+    <p class="small muted" style="margin:0">${all ? '全部' : mLabel(LIST.month)}共 ${total} 筆。上面三格是<b>期間的收支合計</b>，只算${statAcc}、不含轉帳和基金收支${other ? `（排除 ${other} 筆）` : ''}，所以不會等於餘額。</p>
   </section>
   <section class="card"><div class="entries">
     ${total ? Object.keys(days).map(d => {
@@ -909,4 +911,4 @@ document.addEventListener('change', ev => {
 
 setSync();
 load();
-</script>
+</script> 
